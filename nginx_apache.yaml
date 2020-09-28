@@ -1,0 +1,195 @@
+---
+- name: Install and configure nginx as reverse proxy to apache with php
+  hosts: all
+  
+  tasks:
+  - name: Install apache and php
+    apt:
+      pkg:
+      - apache2
+      - php-fpm
+      state: latest
+      update_cache: yes
+
+  - name: Create directory for source files and packages
+    file: 
+      path: /root/src
+      state: directory
+      mode: '0755'
+
+  - name: Get fastcgi from kernel.org
+    get_url: 
+      url: https://mirrors.edge.kernel.org/ubuntu/pool/multiverse/liba/libapache-mod-fastcgi/libapache2-mod-fastcgi_2.4.7~0910052141-1.2_i386.deb
+      dest: /root/src/
+      force: no
+
+  - name: Install fastcgi from kernel.org 
+    command: dpkg -i /root/libapache2-mod-fastcgi_2.4.7~0910052141-1.2_i386.deb
+
+  - name: Change apache listening port to 81
+    replace:
+      path: /etc/apache2/ports.conf
+      regexp: '80'
+      replace: '81'
+       
+  - name: Remove default host
+    command:  a2dissite 000-default
+
+  - name: Add new default host
+    command: cp /etc/apache2/sites-available/000-default.conf /etc/apache2/sites-available/001-default.conf
+
+  - name: Change virtual host listening port to 81
+    replace:
+      path: /etc/apache2/sites-available/001-default.conf
+      regexp: '80'
+      replace: '81'
+
+  - name: Activate new site
+    command: a2ensite 001-default
+    notify:
+      - restart apache
+
+  - name: Check if Apache is listening on port 81
+    shell: ss -tunlp | grep apache
+    ignore_errors: true
+    register: listenapache
+
+  - name: Show listening Apache
+    debug: 
+      var=listenapache.stdout_lines
+     
+  - name: Configure Apache to use mod_fastcgi, preserve fastcgi.conf
+    shell: |
+      a2enmod actions
+      mv /etc/apache2/mods-available/fastcgi.conf /etc/apache2/mods-available/fastcgi.conf.default
+    ignore_errors: true   
+
+  - name: Push default fastcgi.conf
+    copy:
+      src: fastcgi.conf
+      dest: /etc/apache2/mods-available/
+
+  - name: Enable fastcgi.conf
+    file:
+      src: /etc/apache2/mods-available/fastcgi.conf
+      dest: /etc/apache2/mods-enabled/fastcgi.conf
+      state: link
+
+  - name: Check apache config is valid
+    shell: apachectl -t
+    register: apacheconfig1
+
+  - name: Show apache config test
+    debug:
+      var=apacheconfig1
+    notify:
+      - restart apache   
+  
+  - name: Verify PHP Functionality
+    shell: echo "<?php phpinfo(); ?>" | tee /var/www/html/info.php
+  
+  - name: Install nginx
+    apt:
+      pkg:
+      - nginx
+      state: latest
+      update_cache: yes
+
+  - name: Push apache site to nginx
+    copy:
+      src: apache
+      dest: /etc/nginx/sites-available/
+
+  - name: Verify PHP Functionality
+    shell: echo "<?php phpinfo(); ?>" | tee /var/www/html/info.php
+
+  - name: Remove defualt nginx site
+    file:
+      path: /etc/nginx/sites-enabled/default
+      state: absent
+
+  - name: Enable apache site
+    file:
+      src: /etc/nginx/sites-available/apache
+      dest: /etc/nginx/sites-enabled/apache
+      state: link
+
+  - name: Check that nginx config is valid
+    shell: nginx -t
+    register: nginxconfig
+
+  - name: Show nginx config test
+    debug:
+      var=nginxconfig
+    notify:
+      - restart nginx   
+
+  - name: Install packages for build mod_rpaf
+    apt:
+      pkg:
+      - unzip
+      - build-essential
+      - apache2-dev  
+      state: latest
+      update_cache: yes
+
+  - name: Get mod_rpaf from github
+    get_url:
+      url: https://github.com/gnif/mod_rpaf/archive/stable.zip
+      dest: /root/src
+      force: no
+
+  - name: Unzip mod_rpaf
+    unarchive:
+      src: /root/src/mod_rpaf-stable.zip
+      dest: /root/src/
+      remote_src: yes
+
+  - name: Install mod_rpaf
+    shell: cd /root/src/mod_rpaf-stable && make && make install
+
+  - name: Push rpaf.load to apache mods-available
+    copy:
+      src: rpaf.load
+      dest: /etc/apache2/mods-available/
+
+  - name: Push rpaf.conf to apache mods-available
+    copy:
+      src: rpaf.conf
+      dest: /etc/apache2/mods-available/
+
+  - name: Emable mod_rpaf
+    command: a2enmod rpaf
+
+  - name: Check apache config is valid
+    command: apachectl -t
+    register: apacheconfig2
+
+  - name: Show apache config test
+    debug:
+      var=apacheconfig2
+    notify:
+      - restart apache   
+
+  handlers:
+        - name: restart apache
+          service:
+            name: apache2
+            state: restarted
+
+        - name: reload apache
+          service: 
+            name: apache2
+            state: reloaded
+
+        - name: restart nginx
+          service:
+            name: nginx         
+            state: restarted      
+                                  
+        - name: reload nginx    
+          service:                
+            name: nginx         
+            state: reloaded      
+
+
