@@ -17,14 +17,27 @@
       state: directory
       mode: '0755'
 
-  - name: Get fastcgi from kernel.org
+  - name: Get fastcg i386 from kernel.org
     get_url: 
       url: https://mirrors.edge.kernel.org/ubuntu/pool/multiverse/liba/libapache-mod-fastcgi/libapache2-mod-fastcgi_2.4.7~0910052141-1.2_i386.deb
       dest: /root/src/
       force: no
+    when: ansible_architecture == 'i386'
+
+  - name: Get fastcgi amd64 from kernel.org
+    get_url: 
+      url: https://mirrors.edge.kernel.org/ubuntu/pool/multiverse/liba/libapache-mod-fastcgi/libapache2-mod-fastcgi_2.4.7~0910052141-1.2_amd64.deb
+      dest: /root/src/
+      force: no
+    when: ansible_architecture == 'x86_64'
 
   - name: Install fastcgi from kernel.org 
-    command: dpkg -i /root/libapache2-mod-fastcgi_2.4.7~0910052141-1.2_i386.deb
+    command: dpkg -i /root/src/libapache2-mod-fastcgi_2.4.7~0910052141-1.2_i386.deb
+    when: ansible_architecture == 'i386'
+
+  - name: Install fastcgi from kernel.org 
+    command: dpkg -i /root/src/libapache2-mod-fastcgi_2.4.7~0910052141-1.2_amd64.deb
+    when: ansible_architecture == 'x86_64'
 
   - name: Change apache listening port to 81
     replace:
@@ -46,8 +59,12 @@
 
   - name: Activate new site
     command: a2ensite 001-default
-    notify:
-      - restart apache
+
+  - name: restart apache
+    service:
+      name: apache2
+      state: restarted
+
 
   - name: Check if Apache is listening on port 81
     shell: ss -tunlp | grep apache
@@ -82,8 +99,11 @@
   - name: Show apache config test
     debug:
       var=apacheconfig1
-    notify:
-      - restart apache   
+
+  - name: restart apache
+    service:
+      name: apache2
+      state: restarted
   
   - name: Verify PHP Functionality
     shell: echo "<?php phpinfo(); ?>" | tee /var/www/html/info.php
@@ -121,8 +141,11 @@
   - name: Show nginx config test
     debug:
       var=nginxconfig
-    notify:
-      - restart nginx   
+
+  - name: restart nginx
+    service:
+      name: nginx         
+      state: restarted   
 
   - name: Install packages for build mod_rpaf
     apt:
@@ -169,27 +192,8 @@
     debug:
       var=apacheconfig2
     notify:
-      - restart apache   
-
-  handlers:
-        - name: restart apache
-          service:
-            name: apache2
-            state: restarted
-
-        - name: reload apache
-          service: 
-            name: apache2
-            state: reloaded
-
-        - name: restart nginx
-          service:
-            name: nginx         
-            state: restarted      
-                                  
-        - name: reload nginx    
-          service:                
-            name: nginx         
-            state: reloaded      
-
-
+    
+  - name: restart apache
+    service:
+      name: apache2
+      state: restarted
